@@ -1,14 +1,18 @@
 package com.ai.career.backend.controller;
 
+import com.ai.career.backend.dto.ApiResponse;
 import com.ai.career.backend.model.Resume;
 import com.ai.career.backend.repository.ResumeRepository;
 import com.ai.career.backend.service.*;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
-import java.io.IOException;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -21,14 +25,14 @@ public class ResumeController {
     private final GeminiService geminiService;
     private final PromptService promptService;
 
-    // 👉 Constructor Injection
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     public ResumeController(
             ResumeRepository resumeRepository,
             SessionService sessionService,
             ResumeTextExtractorService textExtractorService,
             GeminiService geminiService,
-            PromptService promptService
-    ) {
+            PromptService promptService) {
         this.resumeRepository = resumeRepository;
         this.sessionService = sessionService;
         this.textExtractorService = textExtractorService;
@@ -36,24 +40,22 @@ public class ResumeController {
         this.promptService = promptService;
     }
 
-    // ===============================
-    // UPLOAD RESUME
-    // ===============================
+    // =========================
+    // UPLOAD RESUME (UNCHANGED)
+    // =========================
     @PostMapping("/upload")
-    public String uploadResume(
+    public ResponseEntity<ApiResponse<String>> uploadResume(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("sessionToken") String sessionToken
-    ) throws IOException {
+            @RequestParam("sessionToken") String sessionToken) throws Exception {
 
         UUID userId = sessionService.getUserFromSession(sessionToken);
         if (userId == null) {
-            return "INVALID_SESSION";
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
         }
 
-        File uploadDir = new File("E:/Resume analyzer/uploads");
-        if (!uploadDir.exists()) {
-            uploadDir.mkdirs();
-        }
+        File uploadDir = new File("P:/spring boot/uploads");
+        if (!uploadDir.exists()) uploadDir.mkdirs();
 
         String storedFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
         File destinationFile = new File(uploadDir, storedFileName);
@@ -66,67 +68,119 @@ public class ResumeController {
                 .uploadedAt(Instant.now())
                 .build();
 
-        Resume savedResume = resumeRepository.save(resume);
+        Resume saved = resumeRepository.save(resume);
 
-        return savedResume.getId().toString();
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, saved.getId().toString(), null));
     }
 
-    // ===============================
-    // EXTRACT TEXT
-    // ===============================
+    // =========================
+    // EXTRACT TEXT (UNCHANGED)
+    // =========================
     @PostMapping("/extract-text")
-    public String extractResumeText(
-            @RequestParam("resumeId") UUID resumeId,
-            @RequestParam("sessionToken") String sessionToken
-    ) throws IOException {
+    public ResponseEntity<ApiResponse<String>> extractResumeText(
+            @RequestParam UUID resumeId,
+            @RequestParam String sessionToken) throws Exception {
 
         UUID userId = sessionService.getUserFromSession(sessionToken);
         if (userId == null) {
-            return "INVALID_SESSION";
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
         }
 
         Resume resume = resumeRepository.findById(resumeId)
-                .orElseThrow(() -> new RuntimeException("Resume not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Resume not found"));
 
         if (!resume.getUserId().equals(userId)) {
-            return "NOT_ALLOWED";
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiResponse<>(false, null, "NOT_ALLOWED"));
         }
 
-        return textExtractorService.extractTextFromPdf(resume.getFilePath());
+        String extractedText =
+                textExtractorService.extractTextFromPdf(resume.getFilePath());
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, extractedText, null));
     }
 
-    // ===============================
-    // RESUME ANALYZER (GEMINI)
-    // ===============================
+    // =========================
+    // ANALYZE RESUME (FIXED)
+    // =========================
     @PostMapping("/analyze")
-    public String analyzeResume(
-            @RequestParam("resumeId") UUID resumeId,
-            @RequestParam("sessionToken") String sessionToken
-    ) throws IOException {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> analyzeResume(
+            @RequestParam UUID resumeId,
+            @RequestParam String sessionToken) {
 
-        // 1. Validate session
         UUID userId = sessionService.getUserFromSession(sessionToken);
         if (userId == null) {
-            return "INVALID_SESSION";
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
         }
 
-        // 2. Fetch resume
-        Resume resume = resumeRepository.findById(resumeId)
-                .orElseThrow(() -> new RuntimeException("Resume not found"));
-
-        // 3. Ownership check
-        if (!resume.getUserId().equals(userId)) {
-            return "NOT_ALLOWED";
+        Resume resume = resumeRepository.findById(resumeId).orElse(null);
+        if (resume == null || !resume.getUserId().equals(userId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiResponse<>(false, null, "NOT_ALLOWED"));
         }
 
-        // 4. Extract resume text
-        String resumeText = textExtractorService
-                .extractTextFromPdf(resume.getFilePath());
+        try {
+            // 1️⃣ Extract text
+            String resumeText =
+                    textExtractorService.extractTextFromPdf(resume.getFilePath());
 
-        // 5. Build Gemini prompt
-        String prompt = promptService.resumeAnalysisPrompt(resumeText);
+            if (resumeText == null || resumeText.trim().length() < 50) {
+                return ResponseEntity.badRequest()
+                        .body(new ApiResponse<>(false, null, "RESUME_TEXT_TOO_SHORT"));
+            }
 
-        // 6. Call Gemini
-        return geminiService.generateResponse(prompt);
+            // 2️⃣ Build prompt
+            String prompt = promptService.resumeAnalysisPrompt(resumeText);
+
+            // 3️⃣ Call Gemini
+            String geminiRaw = geminiService.generateResponse(prompt);
+
+            if (geminiRaw == null || geminiRaw.isBlank()) {
+                throw new RuntimeException("Gemini returned empty response");
+            }
+
+            // 4️⃣ Extract JSON safely
+            String jsonOnly = extractJson(geminiRaw);
+
+            // 5️⃣ Parse JSON
+            Map<String, Object> parsed =
+                    objectMapper.readValue(jsonOnly, new TypeReference<>() {});
+
+            return ResponseEntity.ok(
+                    new ApiResponse<>(true, parsed, null));
+
+        } catch (Exception e) {
+            // 🔥 THIS IS THE MOST IMPORTANT FIX
+            e.printStackTrace(); // now you see the REAL error
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>(false, null, e.getMessage()));
+        }
+    }
+
+    // =========================
+    // JSON CLEANER (SAFE)
+    // =========================
+    private String extractJson(String raw) {
+        raw = raw.trim();
+
+        if (raw.startsWith("```")) {
+            raw = raw.replaceAll("```json", "")
+                     .replaceAll("```", "")
+                     .trim();
+        }
+
+        int start = raw.indexOf('{');
+        int end = raw.lastIndexOf('}');
+
+        if (start < 0 || end < 0 || end <= start) {
+            throw new RuntimeException("Invalid JSON from Gemini");
+        }
+
+        return raw.substring(start, end + 1);
     }
 }
