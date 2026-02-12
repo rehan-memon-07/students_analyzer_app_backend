@@ -152,46 +152,43 @@ public class PromptService {
 
         STRICT RULES:
         - paths MUST contain at least 1 item
-        - each path MUST contain at least 5 modules
+        - each path MUST contain at least 5 modules  
         - modules MUST be detailed
         - description MUST be at least 15 words
 
+        ANALYSIS PROCESS (MANDATORY - FOLLOW EXACTLY):
+
+        1. FIRST: Extract primary career domain(s) FROM RESUME ONLY (job titles, responsibilities, projects, education, certifications, achievements). Do NOT assume software/tech.
+
+        2. IDENTIFY career stage: student, fresher, early professional (0-2 yrs), mid-level (3-5 yrs), experienced (5+ yrs), or career switcher.
+
+        3. DETECT skill gaps by comparing resume evidence against industry standards for detected domain(s).
+
+        4. For NON-TECHNICAL resumes (business, marketing, HR, finance, design, healthcare, operations, education), STAY IN THAT DOMAIN. Never force tech roles.
+
+        5. If MULTIPLE domains exist, create separate career paths for each viable track.
+
+        6. Base ALL role suggestions on CONCRETE resume evidence (actual skills demonstrated, projects completed, responsibilities handled).
+
+        7. Respect real-world constraints: education level, experience duration, current role level.
+
+        8. For career transitions, suggest realistic bridge roles, not senior positions.
+
+        9. NEVER echo or summarize resume content. Synthesize forward-looking guidance only.
+
+        EXACT JSON FORMAT (DO NOT CHANGE):
         {
-        "id": "career_path_1",
-        "skillName": "Software Development",
-        "suggestedRoles": [
-            "Junior Software Engineer",
-            "Backend Developer",
-            "Mobile Developer"
-        ],
+        "id": "career_path_1", 
+        "skillName": "[RESUME-DRIVEN DOMAIN]",
+        "suggestedRoles": ["role1", "role2", "role3"],
         "paths": [
             {
-            "roleName": "Backend Developer",
+            "roleName": "Specific Role", 
             "weeks": 12,
             "modules": [
                 {
-                "name": "Spring Boot Fundamentals",
-                "description": "Learn how Spring Boot works internally, dependency injection, application lifecycle, and REST API basics.",
-                "completed": false
-                },
-                {
-                "name": "REST API Design",
-                "description": "Design scalable REST APIs including request validation, pagination, error handling, and response structures.",
-                "completed": false
-                },
-                {
-                "name": "Spring Data JPA",
-                "description": "Understand entity relationships, repositories, transactions, and performance optimization using Hibernate.",
-                "completed": false
-                },
-                {
-                "name": "Authentication & Security",
-                "description": "Implement JWT authentication, role-based authorization, and secure endpoints using Spring Security.",
-                "completed": false
-                },
-                {
-                "name": "Project Deployment",
-                "description": "Package, containerize, and deploy Spring Boot applications using Docker and cloud platforms.",
+                "name": "Module Name",
+                "description": "Detailed description at least 15 words explaining what they'll learn and why it matters for this role.",
                 "completed": false
                 }
             ]
@@ -201,6 +198,7 @@ public class PromptService {
 
         Resume:
         {{RESUME}}
+
         """.replace("{{RESUME}}", resumeText);
     }
 
