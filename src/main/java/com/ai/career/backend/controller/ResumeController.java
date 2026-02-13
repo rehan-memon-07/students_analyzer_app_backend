@@ -54,12 +54,13 @@ public class ResumeController {
                     .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
         }
 
-        File uploadDir = new File("P:/spring boot/uploads");
+        File uploadDir = new File("/tmp/uploads");
         if (!uploadDir.exists()) uploadDir.mkdirs();
 
         String storedFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
         File destinationFile = new File(uploadDir, storedFileName);
         file.transferTo(destinationFile);
+
 
         Resume resume = Resume.builder()
                 .userId(userId)
