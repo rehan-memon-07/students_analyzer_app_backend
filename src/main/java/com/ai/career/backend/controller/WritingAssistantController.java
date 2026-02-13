@@ -70,10 +70,11 @@ public class WritingAssistantController {
             );
 
         } catch (Exception e) {
-            // 🔥 Never expose 500 to frontend for AI failures
+            e.printStackTrace();
             return ResponseEntity.ok(
-                    new ApiResponse<>(false, null, "WRITING_ASSISTANT_FAILED")
+                new ApiResponse<>(false, null, e.getMessage())
             );
         }
+
     }
 }
