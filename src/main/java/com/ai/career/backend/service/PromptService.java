@@ -103,6 +103,33 @@ public class PromptService {
     }
 
     // ===============================
+    // 2️⃣ MOCK INTERVIEW – START (SETS THE BAR)
+    // ===============================
+    public String mockInterviewStartPrompt1(String resumeText, String role) {
+        String template = """
+        You are a Principal Engineer at a top-tier tech company (Google/Amazon/Netflix). 
+        You are conducting a "Bar Raiser" interview. Your job is to determine if the candidate knows their stuff deeply or is just reciting definitions.
+        
+        Candidate Role: {{ROLE}}
+        
+        Resume Context:
+        {{RESUME}}
+        
+        INSTRUCTIONS:
+        1. Identify the most impressive claim on their resume.
+        2. Formulate a technical question that tests the DEPTH of that specific claim.
+        3. Do NOT start with "Tell me about yourself".
+        4. The question must be realistic but challenging.
+        
+        Output: Just the question.
+        """;
+        
+        return template
+                .replace("{{ROLE}}", role)
+                .replace("{{RESUME}}", resumeText);
+    }
+
+    // ===============================
     // 3️⃣ MOCK INTERVIEW – FOLLOW-UP (ADAPTIVE DIFFICULTY ENGINE)
     // ===============================
     public String mockInterviewFollowUpPrompt(String previousQuestion, String userAnswer) {
@@ -141,6 +168,73 @@ public class PromptService {
                 .replace("{{QUESTION}}", previousQuestion)
                 .replace("{{ANSWER}}", userAnswer);
     }
+
+    // ===============================
+// 4️⃣ MOCK INTERVIEW – END (FINAL EVALUATION ENGINE)
+// ===============================
+public String mockInterviewEndPrompt(
+        java.util.List<com.ai.career.backend.dto.MockInterviewEndRequest.QA> conversation,
+        String role
+) {
+
+    StringBuilder conversationBuilder = new StringBuilder();
+
+    for (com.ai.career.backend.dto.MockInterviewEndRequest.QA qa : conversation) {
+        conversationBuilder.append("Q: ")
+                .append(qa.getQuestion())
+                .append("\n");
+        conversationBuilder.append("A: ")
+                .append(qa.getAnswer())
+                .append("\n\n");
+    }
+
+    String template = """
+    You are a Principal Engineer and Hiring Committee Member at a top-tier tech company.
+    You just completed a technical interview.
+
+    Candidate Role: {{ROLE}}
+
+    Your task:
+    Provide a FINAL hiring evaluation.
+
+    Be brutally honest. Do not sugarcoat.
+    If the candidate is weak, clearly say they would be rejected.
+    If strong, justify why they pass.
+
+    Evaluate on:
+    1. Technical Depth
+    2. Clarity of Communication
+    3. Problem-Solving Ability
+    4. Confidence & Ownership
+    5. Real-World Readiness
+
+    =========================================
+
+    OUTPUT ONLY IN JSON:
+
+    {
+      "overallScore": number (0-100),
+      "technicalDepthScore": number (0-10),
+      "communicationScore": number (0-10),
+      "problemSolvingScore": number (0-10),
+      "confidenceScore": number (0-10),
+      "strengths": ["Point 1", "Point 2"],
+      "weaknesses": ["Point 1", "Point 2"],
+      "hireDecision": "Strong Hire / Hire / Lean Hire / Lean Reject / Reject",
+      "finalVerdict": "Brutally honest summary paragraph"
+    }
+
+    =========================================
+
+    Interview Conversation:
+    {{CONVERSATION}}
+    """;
+
+    return template
+            .replace("{{ROLE}}", role)
+            .replace("{{CONVERSATION}}", conversationBuilder.toString());
+}
+
 
    
     // ===============================

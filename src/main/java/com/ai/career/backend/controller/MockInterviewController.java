@@ -2,6 +2,7 @@ package com.ai.career.backend.controller;
 
 import com.ai.career.backend.dto.MockInterviewNextRequest;
 import com.ai.career.backend.dto.MockInterviewStartRequest;
+import com.ai.career.backend.dto.MockInterviewEndRequest;
 import com.ai.career.backend.model.Resume;
 import com.ai.career.backend.repository.ResumeRepository;
 import com.ai.career.backend.service.*;
@@ -61,7 +62,6 @@ public class MockInterviewController {
 
         String firstQuestion = geminiService.generateResponse(prompt);
 
-        // ✅ Return JSON instead of raw text
         Map<String, Object> response = new HashMap<>();
         response.put("sessionId", UUID.randomUUID().toString());
         response.put("firstQuestion", firstQuestion);
@@ -85,9 +85,40 @@ public class MockInterviewController {
 
         String nextQuestion = geminiService.generateResponse(prompt);
 
-        // ✅ Return JSON
         Map<String, Object> response = new HashMap<>();
         response.put("nextQuestion", nextQuestion);
+
+        return response;
+    }
+
+    // ===============================
+    // END INTERVIEW
+    // ===============================
+    @PostMapping("/end")
+    public Map<String, Object> endInterview(
+            @RequestBody MockInterviewEndRequest request
+    ) {
+
+        UUID userId = sessionService.getUserFromSession(request.getSessionToken());
+        if (userId == null) {
+            throw new RuntimeException("INVALID_SESSION");
+        }
+
+        if (request.getConversation() == null || request.getConversation().isEmpty()) {
+            throw new RuntimeException("EMPTY_CONVERSATION");
+        }
+
+        String prompt = promptService
+                .mockInterviewEndPrompt(
+                        request.getConversation(),
+                        request.getRole()
+                );
+
+        String evaluation = geminiService.generateResponse(prompt);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("evaluation", evaluation);
+        response.put("status", "INTERVIEW_COMPLETED");
 
         return response;
     }
