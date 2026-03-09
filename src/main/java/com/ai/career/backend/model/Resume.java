@@ -33,4 +33,28 @@ public class Resume {
     // Upload time
     @Column(nullable = false)
     private Instant uploadedAt;
+
+    // =========================
+    // VERSION GROUPING
+    // =========================
+
+    // Same resume versions group
+    @Column(nullable = true)
+    private UUID groupId;
+
+    // Version number (V1, V2, V3...)
+    @Column(nullable = true)
+    private int versionNumber;
+
+    // =========================
+    // HASHING SYSTEM
+    // =========================
+
+    // SHA256 hash of normalized resume text
+    @Column(length = 64)
+    private String contentHash;
+
+    // Extracted text stored for future use
+    @Column(columnDefinition = "TEXT")
+    private String extractedText;
 }
