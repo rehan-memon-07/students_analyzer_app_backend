@@ -8,7 +8,6 @@ import com.ai.career.backend.repository.ResumeRepository;
 import com.ai.career.backend.service.*;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -19,20 +18,17 @@ public class MockInterviewController {
 
     private final ResumeRepository resumeRepository;
     private final SessionService sessionService;
-    private final ResumeTextExtractorService extractorService;
     private final PromptService promptService;
     private final GeminiService geminiService;
 
     public MockInterviewController(
             ResumeRepository resumeRepository,
             SessionService sessionService,
-            ResumeTextExtractorService extractorService,
             PromptService promptService,
             GeminiService geminiService
     ) {
         this.resumeRepository = resumeRepository;
         this.sessionService = sessionService;
-        this.extractorService = extractorService;
         this.promptService = promptService;
         this.geminiService = geminiService;
     }
@@ -40,37 +36,34 @@ public class MockInterviewController {
     // ===============================
     // START MOCK INTERVIEW
     // ===============================
-@PostMapping("/start")
-public Map<String, Object> startInterview(
-        @RequestBody MockInterviewStartRequest request
-) {
+    @PostMapping("/start")
+    public Map<String, Object> startInterview(
+            @RequestBody MockInterviewStartRequest request
+    ) {
+        UUID userId = sessionService.getUserFromSession(request.getSessionToken());
+        if (userId == null) {
+            throw new RuntimeException("INVALID_SESSION");
+        }
 
-    UUID userId = sessionService.getUserFromSession(request.getSessionToken());
-    if (userId == null) {
-        throw new RuntimeException("INVALID_SESSION");
+        Resume resume = resumeRepository
+                .findById(request.getResumeId())
+                .orElseThrow(() -> new RuntimeException("Resume not found"));
+
+        // ✅ Use stored extractedText — file is deleted after upload on Render
+        String resumeText = resume.getExtractedText();
+        if (resumeText == null || resumeText.isBlank()) {
+            throw new RuntimeException("Resume text not available. Please re-upload your resume.");
+        }
+
+        String prompt = promptService.mockInterviewStartPrompt(resumeText, request.getRole());
+        String firstQuestion = geminiService.generateResponse(prompt);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("sessionId", UUID.randomUUID().toString());
+        response.put("firstQuestion", firstQuestion.trim());
+
+        return response;
     }
-
-    Resume resume = resumeRepository
-            .findById(request.getResumeId())
-            .orElseThrow(() -> new RuntimeException("Resume not found"));
-
-    // ✅ Use stored text instead of re-reading deleted file
-    String resumeText = resume.getExtractedText();
-    if (resumeText == null || resumeText.isBlank()) {
-        throw new RuntimeException("Resume text not available. Please re-upload your resume.");
-    }
-
-    String prompt = promptService
-            .mockInterviewStartPrompt(resumeText, request.getRole());
-
-    String firstQuestion = geminiService.generateResponse(prompt);
-
-    Map<String, Object> response = new HashMap<>();
-    response.put("sessionId", UUID.randomUUID().toString());
-    response.put("firstQuestion", firstQuestion);
-
-    return response;
-}
 
     // ===============================
     // NEXT QUESTION
@@ -79,17 +72,35 @@ public Map<String, Object> startInterview(
     public Map<String, Object> nextQuestion(
             @RequestBody MockInterviewNextRequest request
     ) {
+        String prompt = promptService.mockInterviewFollowUpPrompt(
+                request.getPreviousQuestion(),
+                request.getAnswer()
+        );
 
-        String prompt = promptService
-                .mockInterviewFollowUpPrompt(
-                        request.getPreviousQuestion(),
-                        request.getAnswer()
-                );
+        String raw = geminiService.generateResponse(prompt);
 
-        String nextQuestion = geminiService.generateResponse(prompt);
+        // ── Parse the 3-part response ──────────────────────────────
+        // Format from PromptService:
+        // [Feedback]: ...
+        // [Difficulty Adjustment]: Increased / Maintained / Decreased
+        // [Next Question]: ...
+
+        String feedback            = extractField(raw, "[Feedback]:");
+        String difficultyAdjustment = extractField(raw, "[Difficulty Adjustment]:");
+        String nextQuestion        = extractField(raw, "[Next Question]:");
+
+        // Fallback: if parsing fails, treat whole response as question
+        if (nextQuestion.isBlank()) {
+            nextQuestion = raw.trim();
+        }
+        if (difficultyAdjustment.isBlank()) {
+            difficultyAdjustment = "Maintained";
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("nextQuestion", nextQuestion);
+        response.put("feedback", feedback);
+        response.put("difficultyAdjustment", difficultyAdjustment);
 
         return response;
     }
@@ -101,7 +112,6 @@ public Map<String, Object> startInterview(
     public Map<String, Object> endInterview(
             @RequestBody MockInterviewEndRequest request
     ) {
-
         UUID userId = sessionService.getUserFromSession(request.getSessionToken());
         if (userId == null) {
             throw new RuntimeException("INVALID_SESSION");
@@ -111,11 +121,10 @@ public Map<String, Object> startInterview(
             throw new RuntimeException("EMPTY_CONVERSATION");
         }
 
-        String prompt = promptService
-                .mockInterviewEndPrompt(
-                        request.getConversation(),
-                        request.getRole()
-                );
+        String prompt = promptService.mockInterviewEndPrompt(
+                request.getConversation(),
+                request.getRole()
+        );
 
         String evaluation = geminiService.generateResponse(prompt);
 
@@ -124,5 +133,23 @@ public Map<String, Object> startInterview(
         response.put("status", "INTERVIEW_COMPLETED");
 
         return response;
+    }
+
+    // ===============================
+    // HELPER — extract field from Gemini response
+    // ===============================
+    private String extractField(String raw, String fieldKey) {
+        int start = raw.indexOf(fieldKey);
+        if (start == -1) return "";
+
+        int valueStart = start + fieldKey.length();
+
+        // Find where next field starts (next line starting with "[")
+        int nextField = raw.indexOf("\n[", valueStart);
+        String value = nextField != -1
+                ? raw.substring(valueStart, nextField)
+                : raw.substring(valueStart);
+
+        return value.trim();
     }
 }
