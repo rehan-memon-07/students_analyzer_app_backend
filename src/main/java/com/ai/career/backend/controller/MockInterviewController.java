@@ -40,34 +40,37 @@ public class MockInterviewController {
     // ===============================
     // START MOCK INTERVIEW
     // ===============================
-    @PostMapping("/start")
-    public Map<String, Object> startInterview(
-            @RequestBody MockInterviewStartRequest request
-    ) throws IOException {
+@PostMapping("/start")
+public Map<String, Object> startInterview(
+        @RequestBody MockInterviewStartRequest request
+) {
 
-        UUID userId = sessionService.getUserFromSession(request.getSessionToken());
-        if (userId == null) {
-            throw new RuntimeException("INVALID_SESSION");
-        }
-
-        Resume resume = resumeRepository
-                .findById(request.getResumeId())
-                .orElseThrow(() -> new RuntimeException("Resume not found"));
-
-        String resumeText = extractorService
-                .extractTextFromPdf(resume.getFilePath());
-
-        String prompt = promptService
-                .mockInterviewStartPrompt(resumeText, request.getRole());
-
-        String firstQuestion = geminiService.generateResponse(prompt);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("sessionId", UUID.randomUUID().toString());
-        response.put("firstQuestion", firstQuestion);
-
-        return response;
+    UUID userId = sessionService.getUserFromSession(request.getSessionToken());
+    if (userId == null) {
+        throw new RuntimeException("INVALID_SESSION");
     }
+
+    Resume resume = resumeRepository
+            .findById(request.getResumeId())
+            .orElseThrow(() -> new RuntimeException("Resume not found"));
+
+    // ✅ Use stored text instead of re-reading deleted file
+    String resumeText = resume.getExtractedText();
+    if (resumeText == null || resumeText.isBlank()) {
+        throw new RuntimeException("Resume text not available. Please re-upload your resume.");
+    }
+
+    String prompt = promptService
+            .mockInterviewStartPrompt(resumeText, request.getRole());
+
+    String firstQuestion = geminiService.generateResponse(prompt);
+
+    Map<String, Object> response = new HashMap<>();
+    response.put("sessionId", UUID.randomUUID().toString());
+    response.put("firstQuestion", firstQuestion);
+
+    return response;
+}
 
     // ===============================
     // NEXT QUESTION
