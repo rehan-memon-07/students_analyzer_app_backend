@@ -1,6 +1,7 @@
 package com.ai.career.backend.controller;
 
 import com.ai.career.backend.dto.ApiResponse;
+import com.ai.career.backend.dto.ResumeCompareRequest;
 import com.ai.career.backend.model.Resume;
 import com.ai.career.backend.model.ResumeAnalysis;
 import com.ai.career.backend.repository.ResumeRepository;
@@ -215,6 +216,65 @@ public class ResumeController {
 
             e.printStackTrace();
 
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>(false, null, e.getMessage()));
+        }
+    }
+
+    // =========================
+    // COMPARE TWO RESUME VERSIONS
+    // =========================
+    @PostMapping("/compare")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> compareResumes(
+            @RequestBody ResumeCompareRequest request) {
+
+        UUID userId = sessionService.getUserFromSession(request.getSessionToken());
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
+        }
+
+        Resume resumeA = resumeRepository.findById(request.getResumeIdA()).orElse(null);
+        Resume resumeB = resumeRepository.findById(request.getResumeIdB()).orElse(null);
+
+        if (resumeA == null || resumeB == null) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, null, "RESUME_NOT_FOUND"));
+        }
+
+        if (!resumeA.getUserId().equals(userId) || !resumeB.getUserId().equals(userId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new ApiResponse<>(false, null, "NOT_ALLOWED"));
+        }
+
+        String textA = resumeA.getExtractedText();
+        String textB = resumeB.getExtractedText();
+
+        if (textA == null || textA.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, null, "VERSION_A_TEXT_MISSING"));
+        }
+        if (textB == null || textB.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, null, "VERSION_B_TEXT_MISSING"));
+        }
+
+        try {
+            String prompt = promptService.resumeComparisonPrompt(textA, textB);
+            String geminiRaw = geminiService.generateResponse(prompt);
+
+            if (geminiRaw == null || geminiRaw.isBlank()) {
+                throw new RuntimeException("Gemini returned empty response");
+            }
+
+            String jsonOnly = extractJson(geminiRaw);
+            Map<String, Object> parsed =
+                    objectMapper.readValue(jsonOnly, new TypeReference<>() {});
+
+            return ResponseEntity.ok(new ApiResponse<>(true, parsed, null));
+
+        } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ApiResponse<>(false, null, e.getMessage()));
         }

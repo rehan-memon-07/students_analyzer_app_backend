@@ -75,6 +75,60 @@ public class PromptService {
         return template.replace("{{RESUME}}", resumeText);
     }
 
+
+    // ===============================
+    // RESUME VERSION COMPARISON PROMPT
+    // ===============================
+    public String resumeComparisonPrompt(String resumeTextA, String resumeTextB) {
+        String template = """
+        You are a senior technical recruiter and resume expert at a top-tier company.
+        You are comparing two versions of a candidate's resume to determine which is stronger and why.
+
+        VERSION A (Older):
+        {{RESUME_A}}
+
+        =========================================
+
+        VERSION B (Newer):
+        {{RESUME_B}}
+
+        =========================================
+
+        INSTRUCTIONS:
+        - Evaluate both versions across the same criteria.
+        - Be brutally specific. Do not give vague feedback.
+        - Identify exact improvements, regressions, and unchanged areas.
+        - Give a final recommendation on which version to use.
+
+        OUTPUT ONLY IN JSON (no markdown, no explanation outside JSON):
+
+        {
+          "overallVerdict": "string (1-2 sentence summary of which is better and why)",
+          "recommendation": "Version A" | "Version B" | "Both are Equal",
+          "scoreDelta": number (positive = B is better, negative = A is better, 0 = equal),
+          "scoreA": number (0-100),
+          "scoreB": number (0-100),
+          "categories": [
+            {
+              "name": "string (category name e.g. Work Experience, Skills, Formatting, ATS Compatibility, Projects, Education)",
+              "scoreA": number (0-10),
+              "scoreB": number (0-10),
+              "change": "improved" | "regressed" | "unchanged",
+              "insight": "string (specific, concrete explanation of what changed)"
+            }
+          ],
+          "improvements": ["string", "string"],
+          "regressions": ["string", "string"],
+          "unchanged": ["string", "string"],
+          "finalAdvice": "string (actionable next step for the candidate)"
+        }
+        """;
+
+        return template
+                .replace("{{RESUME_A}}", resumeTextA)
+                .replace("{{RESUME_B}}", resumeTextB);
+    }
+
     // ===============================
     // 2️⃣ MOCK INTERVIEW – START (SETS THE BAR)
     // ===============================
