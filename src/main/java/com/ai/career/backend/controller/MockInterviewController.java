@@ -49,7 +49,6 @@ public class MockInterviewController {
                 .findById(request.getResumeId())
                 .orElseThrow(() -> new RuntimeException("Resume not found"));
 
-        // ✅ Use stored extractedText — file is deleted after upload on Render
         String resumeText = resume.getExtractedText();
         if (resumeText == null || resumeText.isBlank()) {
             throw new RuntimeException("Resume text not available. Please re-upload your resume.");
@@ -74,33 +73,29 @@ public class MockInterviewController {
     ) {
         String prompt = promptService.mockInterviewFollowUpPrompt(
                 request.getPreviousQuestion(),
-                request.getAnswer()
+                request.getAnswer(),
+                request.getWarningCount()
         );
 
         String raw = geminiService.generateResponse(prompt);
 
-        // ── Parse the 3-part response ──────────────────────────────
-        // Format from PromptService:
-        // [Feedback]: ...
-        // [Difficulty Adjustment]: Increased / Maintained / Decreased
-        // [Next Question]: ...
-
+        // Parse all 4 fields from response
         String feedback            = extractField(raw, "[Feedback]:");
         String difficultyAdjustment = extractField(raw, "[Difficulty Adjustment]:");
+        String aiDetectedStr       = extractField(raw, "[AI Detected]:");
         String nextQuestion        = extractField(raw, "[Next Question]:");
 
-        // Fallback: if parsing fails, treat whole response as question
-        if (nextQuestion.isBlank()) {
-            nextQuestion = raw.trim();
-        }
-        if (difficultyAdjustment.isBlank()) {
-            difficultyAdjustment = "Maintained";
-        }
+        // Fallbacks
+        if (nextQuestion.isBlank()) nextQuestion = raw.trim();
+        if (difficultyAdjustment.isBlank()) difficultyAdjustment = "Maintained";
+
+        boolean aiDetected = aiDetectedStr.toLowerCase().contains("true");
 
         Map<String, Object> response = new HashMap<>();
         response.put("nextQuestion", nextQuestion);
         response.put("feedback", feedback);
         response.put("difficultyAdjustment", difficultyAdjustment);
+        response.put("aiDetected", aiDetected);
 
         return response;
     }
@@ -121,9 +116,13 @@ public class MockInterviewController {
             throw new RuntimeException("EMPTY_CONVERSATION");
         }
 
+        // Get total AI warnings from request (default 0 if not provided)
+        int totalAiWarnings = request.getTotalAiWarnings();
+
         String prompt = promptService.mockInterviewEndPrompt(
                 request.getConversation(),
-                request.getRole()
+                request.getRole(),
+                totalAiWarnings
         );
 
         String evaluation = geminiService.generateResponse(prompt);
@@ -143,8 +142,6 @@ public class MockInterviewController {
         if (start == -1) return "";
 
         int valueStart = start + fieldKey.length();
-
-        // Find where next field starts (next line starting with "[")
         int nextField = raw.indexOf("\n[", valueStart);
         String value = nextField != -1
                 ? raw.substring(valueStart, nextField)
