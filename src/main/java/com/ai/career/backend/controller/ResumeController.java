@@ -92,31 +92,36 @@ public class ResumeController {
     // =========================
     // EXTRACT TEXT (UNCHANGED)
     // =========================
-    @PostMapping("/extract-text")
-    public ResponseEntity<ApiResponse<String>> extractResumeText(
-            @RequestParam UUID resumeId,
-            @RequestParam String sessionToken) throws Exception {
+        @PostMapping("/extract-text")
+        public ResponseEntity<ApiResponse<String>> extractResumeText(
+                @RequestParam UUID resumeId,
+                @RequestParam String sessionToken) throws Exception {
 
         UUID userId = sessionService.getUserFromSession(sessionToken);
         if (userId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
         }
 
         Resume resume = resumeRepository.findById(resumeId)
                 .orElseThrow(() -> new IllegalArgumentException("Resume not found"));
 
         if (!resume.getUserId().equals(userId)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(new ApiResponse<>(false, null, "NOT_ALLOWED"));
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(new ApiResponse<>(false, null, "NOT_ALLOWED"));
         }
 
         String extractedText =
                 textExtractorService.extractTextFromPdf(resume.getFilePath());
 
+        // ✅ ADD THESE 3 LINES — save extracted text to DB
+        resume.setExtractedText(extractedText);
+        resumeRepository.save(resume);
+        // ✅ END ADD
+
         return ResponseEntity.ok(
                 new ApiResponse<>(true, extractedText, null));
-    }
+        }
 
     // =========================
     // ANALYZE RESUME (UPDATED WITH SHA256 CACHE)
