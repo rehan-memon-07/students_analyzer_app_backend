@@ -19,42 +19,32 @@ public class Resume {
     @GeneratedValue
     private UUID id;
 
-    // Resume kis user ka hai
     @Column(nullable = false)
     private UUID userId;
 
-    // Original file name
+    // Original file name e.g. "rehan_resume_v2.pdf"
+    @Column(nullable = true)
     private String fileName;
 
-    // Server me file ka path
+    // No longer used — kept for schema compatibility
     @Column(nullable = false)
     private String filePath;
 
-    // Upload time
     @Column(nullable = false)
     private Instant uploadedAt;
 
-    // =========================
-    // VERSION GROUPING
-    // =========================
-
-    // Same resume versions group
+    // Version grouping
     @Column(nullable = true)
     private UUID groupId;
 
-    // Version number (V1, V2, V3...)
     @Column(nullable = true)
     private int versionNumber;
-
-    // =========================
-    // HASHING SYSTEM
-    // =========================
 
     // SHA256 hash of normalized resume text
     @Column(length = 64)
     private String contentHash;
 
-    // Extracted text stored for future use
+    // Extracted text saved immediately on upload
     @Column(columnDefinition = "TEXT")
     private String extractedText;
 }
