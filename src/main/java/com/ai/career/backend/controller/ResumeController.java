@@ -5,7 +5,12 @@ import com.ai.career.backend.model.Resume;
 import com.ai.career.backend.model.ResumeAnalysis;
 import com.ai.career.backend.repository.ResumeAnalysisRepository;
 import com.ai.career.backend.repository.ResumeRepository;
-import com.ai.career.backend.service.*;
+import com.ai.career.backend.service.GeminiService;
+import com.ai.career.backend.service.HashService;
+import com.ai.career.backend.service.PromptService;
+import com.ai.career.backend.service.ResumeTextExtractorService;
+import com.ai.career.backend.service.SessionService;
+import com.ai.career.backend.service.TextNormalizerService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -48,9 +53,9 @@ public class ResumeController {
         this.sessionService = sessionService;
     }
 
-    // ============================================================
-    // UPLOAD — Extract text in memory, no file saved to disk
-    // ============================================================
+    // ================================================================
+    // UPLOAD — extract text in memory, no file saved to disk
+    // ================================================================
     @PostMapping("/upload")
     public ResponseEntity<ApiResponse<Map<String, Object>>> uploadResume(
             @RequestParam("file") MultipartFile file,
@@ -81,17 +86,16 @@ public class ResumeController {
                         .body(new ApiResponse<>(false, null, "EMPTY_RESUME_TEXT"));
             }
 
-            // Hash for caching
+            // Normalize and hash for deduplication
             String normalizedText = normalizerService.normalize(rawText);
-            String contentHash = hashService.sha256(normalizedText);
+            String contentHash = hashService.generateHash(normalizedText);
 
-            // Check for existing resume with same hash for this user
+            // Return existing record if same resume already uploaded
             Resume existing = resumeRepository
                     .findByUserIdAndContentHash(userId, contentHash)
                     .orElse(null);
 
             if (existing != null) {
-                // Duplicate resume — return existing record
                 return ResponseEntity.ok(new ApiResponse<>(true, Map.of(
                         "resumeId", existing.getId().toString(),
                         "fileName", existing.getFileName() != null
@@ -100,14 +104,14 @@ public class ResumeController {
                 ), null));
             }
 
-            // Save resume record
+            // Save new resume record with extracted text immediately
             Resume resume = Resume.builder()
                     .userId(userId)
                     .fileName(originalFileName)
-                    .filePath("")           // no longer used
+                    .filePath("")
                     .uploadedAt(Instant.now())
                     .contentHash(contentHash)
-                    .extractedText(rawText) // saved immediately
+                    .extractedText(rawText)
                     .build();
 
             resumeRepository.save(resume);
@@ -124,9 +128,9 @@ public class ResumeController {
         }
     }
 
-    // ============================================================
-    // EXTRACT TEXT — now just reads from DB (already saved on upload)
-    // ============================================================
+    // ================================================================
+    // EXTRACT TEXT — reads from DB (text already saved on upload)
+    // ================================================================
     @PostMapping("/extract-text")
     public ResponseEntity<ApiResponse<String>> extractResumeText(
             @RequestParam UUID resumeId,
@@ -138,16 +142,13 @@ public class ResumeController {
                     .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
         }
 
-        Resume resume = resumeRepository.findById(resumeId)
-                .orElse(null);
+        Resume resume = resumeRepository.findById(resumeId).orElse(null);
         if (resume == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(new ApiResponse<>(false, null, "RESUME_NOT_FOUND"));
         }
 
         String extractedText = resume.getExtractedText();
-
-        // Fallback: if somehow text is missing, return error clearly
         if (extractedText == null || extractedText.isBlank()) {
             return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                     .body(new ApiResponse<>(false, null, "EXTRACTED_TEXT_MISSING"));
@@ -156,9 +157,9 @@ public class ResumeController {
         return ResponseEntity.ok(new ApiResponse<>(true, extractedText, null));
     }
 
-    // ============================================================
+    // ================================================================
     // ANALYZE
-    // ============================================================
+    // ================================================================
     @PostMapping("/analyze")
     public ResponseEntity<ApiResponse<String>> analyzeResume(
             @RequestParam UUID resumeId,
@@ -171,8 +172,7 @@ public class ResumeController {
                         .body(new ApiResponse<>(false, null, "INVALID_SESSION"));
             }
 
-            Resume resume = resumeRepository.findById(resumeId)
-                    .orElse(null);
+            Resume resume = resumeRepository.findById(resumeId).orElse(null);
             if (resume == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(new ApiResponse<>(false, null, "RESUME_NOT_FOUND"));
@@ -186,7 +186,7 @@ public class ResumeController {
 
             String contentHash = resume.getContentHash();
 
-            // Check cache
+            // Return cached analysis if available
             ResumeAnalysis cached = resumeAnalysisRepository
                     .findByContentHash(contentHash)
                     .orElse(null);
@@ -198,7 +198,7 @@ public class ResumeController {
 
             // Run Gemini analysis
             String prompt = promptService.resumeAnalysisPrompt(extractedText);
-            String analysisJson = geminiService.generateResponse(prompt);
+            String analysisJson = extractJson(geminiService.generateResponse(prompt));
 
             // Cache result
             ResumeAnalysis analysis = ResumeAnalysis.builder()
@@ -216,9 +216,9 @@ public class ResumeController {
         }
     }
 
-    // ============================================================
+    // ================================================================
     // COMPARE
-    // ============================================================
+    // ================================================================
     @PostMapping("/compare")
     public ResponseEntity<ApiResponse<String>> compareResumes(
             @RequestParam UUID resumeIdA,
@@ -249,7 +249,7 @@ public class ResumeController {
             }
 
             String prompt = promptService.resumeComparisonPrompt(textA, textB);
-            String comparisonJson = geminiService.generateResponse(prompt);
+            String comparisonJson = extractJson(geminiService.generateResponse(prompt));
 
             return ResponseEntity.ok(new ApiResponse<>(true, comparisonJson, null));
 
@@ -258,10 +258,10 @@ public class ResumeController {
                     .body(new ApiResponse<>(false, null, "COMPARISON_FAILED: " + e.getMessage()));
         }
     }
-}
-    // =========================
-    // JSON CLEANER (UNCHANGED)
-    // =========================
+
+    // ================================================================
+    // JSON CLEANER — strips markdown backticks Gemini sometimes adds
+    // ================================================================
     private String extractJson(String raw) {
         raw = raw.trim();
 
@@ -275,7 +275,10 @@ public class ResumeController {
         int end = raw.lastIndexOf('}');
 
         if (start < 0 || end < 0 || end <= start) {
-            throw new RuntimeException("Invalid JSON from Gemini");
+            throw new RuntimeException(
+                "Invalid JSON from Gemini: " +
+                raw.substring(0, Math.min(raw.length(), 200))
+            );
         }
 
         return raw.substring(start, end + 1);

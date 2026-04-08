@@ -1,13 +1,16 @@
 package com.ai.career.backend.repository;
 
-import com.ai.career.backend.model.Resume;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
-import java.util.List;
+import com.ai.career.backend.model.Resume;
+
+import java.util.Optional;
 import java.util.UUID;
 
+@Repository
 public interface ResumeRepository extends JpaRepository<Resume, UUID> {
 
-    // Get all resumes of a user
-    List<Resume> findByUserId(UUID userId);
+    Optional<Resume> findByUserIdAndContentHash(UUID userId, String contentHash);
+
 }
