@@ -23,7 +23,7 @@ public class Resume {
     private UUID userId;
 
     // Original file name e.g. "rehan_resume_v2.pdf"
-    @Column(nullable = true)
+    @Column(name = "file_name", nullable = true)
     private String fileName;
 
     // No longer used — kept for schema compatibility
