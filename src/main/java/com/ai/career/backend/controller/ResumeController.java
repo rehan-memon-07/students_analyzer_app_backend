@@ -95,7 +95,8 @@ public class ResumeController {
                     .findByUserIdAndContentHash(userId, contentHash)
                     .orElse(null);
 
-            if (existing != null) {
+            if (existing != null && existing.getExtractedText() != null 
+                    && !existing.getExtractedText().isBlank()) {
                 return ResponseEntity.ok(new ApiResponse<>(true, Map.of(
                         "resumeId", existing.getId().toString(),
                         "fileName", existing.getFileName() != null
@@ -103,6 +104,7 @@ public class ResumeController {
                         "isDuplicate", true
                 ), null));
             }
+// If duplicate exists but has no text, fall through and create fresh record
 
             // Save new resume record with extracted text immediately
             Resume resume = Resume.builder()
